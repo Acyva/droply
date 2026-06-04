@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import type { ItemWithTags } from '@/lib/database.types';
 import { MapPin, X, Star, Edit3, Check, Trash2, ExternalLink } from 'lucide-react';
@@ -15,7 +15,6 @@ export default function MapView({ items, onItemSelect }: MapViewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any>(null);
-  const leafletRef = useRef<any>(null);
   const { updateItem, deleteItem, toggleFavorite } = useApp();
   const [selectedPlace, setSelectedPlace] = useState<ItemWithTags | null>(null);
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -29,23 +28,20 @@ export default function MapView({ items, onItemSelect }: MapViewProps) {
 
     let map: any;
 
-    import('leaflet').then((leaflet) => {
-      const L = leaflet.default;
-      leafletRef.current = L;
+    // Load Leaflet CSS
+    const linkEl = document.createElement('link');
+    linkEl.rel = 'stylesheet';
+    linkEl.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(linkEl);
 
-      // Fix default marker icon
-      const DefaultIcon = L.icon({
-        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-        shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-        iconSize: [25, 41],
-        iconAnchor: [12, 41],
-        popupAnchor: [1, -34],
-        shadowSize: [41, 41],
-      });
-      L.Marker.prototype.options.icon = DefaultIcon;
+    // Load Leaflet JS
+    const scriptEl = document.createElement('script');
+    scriptEl.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    scriptEl.onload = () => {
+      const L = (window as any).L;
+      if (!L || !mapRef.current) return;
 
-      map = L.map(mapRef.current!, {
+      map = L.map(mapRef.current, {
         zoomControl: true,
         attributionControl: true,
       }).setView([48.8566, 2.3522], 4);
@@ -58,7 +54,8 @@ export default function MapView({ items, onItemSelect }: MapViewProps) {
       markersRef.current = L.layerGroup().addTo(map);
       mapInstanceRef.current = map;
       setMapReady(true);
-    });
+    };
+    document.head.appendChild(scriptEl);
 
     return () => {
       if (map) {
@@ -71,7 +68,7 @@ export default function MapView({ items, onItemSelect }: MapViewProps) {
   useEffect(() => {
     if (!mapInstanceRef.current || !markersRef.current || !mapReady) return;
 
-    const L = leafletRef.current;
+    const L = (window as any).L;
     if (!L) return;
 
     markersRef.current.clearLayers();
@@ -114,10 +111,6 @@ export default function MapView({ items, onItemSelect }: MapViewProps) {
 
   return (
     <div className="relative h-full w-full">
-      <link
-        rel="stylesheet"
-        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      />
       <div ref={mapRef} className="h-full w-full" />
 
       {places.length === 0 && (
@@ -158,7 +151,6 @@ export default function MapView({ items, onItemSelect }: MapViewProps) {
           </div>
 
           <div className="px-3 py-2 space-y-2 max-h-60 overflow-y-auto">
-            {/* Title */}
             <div>
               {editingField === 'title' ? (
                 <div className="flex items-center gap-1">
@@ -179,7 +171,6 @@ export default function MapView({ items, onItemSelect }: MapViewProps) {
               )}
             </div>
 
-            {/* Location name */}
             <div>
               {editingField === 'location_name' ? (
                 <div className="flex items-center gap-1">
@@ -204,7 +195,6 @@ export default function MapView({ items, onItemSelect }: MapViewProps) {
               )}
             </div>
 
-            {/* Description */}
             {editingField === 'description' ? (
               <div className="flex items-start gap-1">
                 <textarea
@@ -223,14 +213,12 @@ export default function MapView({ items, onItemSelect }: MapViewProps) {
               </div>
             )}
 
-            {/* Tags */}
             <div className="flex flex-wrap gap-1">
               {selectedPlace.tags.map(tag => (
                 <span key={tag.id} className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: tag.color }}>{tag.name}</span>
               ))}
             </div>
 
-            {/* Notes preview */}
             {selectedPlace.personal_notes && (
               <p className="text-xs text-stone-400 line-clamp-2 border-t border-stone-100 dark:border-stone-800 pt-1.5">{selectedPlace.personal_notes}</p>
             )}

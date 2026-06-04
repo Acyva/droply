@@ -110,6 +110,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const mapped = data.map((item: any) => ({
         ...item,
         tags: (item.item_tags || []).map((it: any) => it.tags).filter(Boolean),
+        latitude: item.latitude ?? null,
+        longitude: item.longitude ?? null,
+        location_name: item.location_name ?? null,
+        location_address: item.location_address ?? null,
       }));
       setItems(mapped);
     }

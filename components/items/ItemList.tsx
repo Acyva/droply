@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { useAuth } from '@/contexts/AuthContext';
 import type { ItemWithTags } from '@/lib/database.types';
 import {
   Search,
@@ -25,6 +24,8 @@ import {
   Trophy,
   Tag,
   Link2,
+  MapPin,
+  Map,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -36,6 +37,7 @@ import {
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import QuickAddModal from '@/components/modals/QuickAddModal';
+import MapView from '@/components/map/MapView';
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
   link: <Globe className="w-3.5 h-3.5" />,
@@ -44,6 +46,7 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
   book: <BookOpen className="w-3.5 h-3.5" />,
   sport: <Trophy className="w-3.5 h-3.5" />,
   wishlist: <Heart className="w-3.5 h-3.5" />,
+  place: <MapPin className="w-3.5 h-3.5" />,
   custom: <Tag className="w-3.5 h-3.5" />,
 };
 
@@ -54,10 +57,11 @@ const TYPE_COLORS: Record<string, string> = {
   book: 'text-emerald-500',
   sport: 'text-red-500',
   wishlist: 'text-pink-500',
+  place: 'text-teal-500',
   custom: 'text-stone-500',
 };
 
-const ITEM_TYPES = ['link', 'note', 'movie', 'book', 'sport', 'wishlist', 'custom'];
+const ITEM_TYPES = ['link', 'note', 'movie', 'book', 'sport', 'wishlist', 'place', 'custom'];
 const SORT_OPTIONS = [
   { value: 'newest', label: 'Newest first' },
   { value: 'oldest', label: 'Oldest first' },
@@ -99,13 +103,18 @@ function ItemCard({ item, viewMode, isSelected, onSelect }: ItemCardProps) {
           {item.description && (
             <p className="text-xs text-stone-500 dark:text-stone-400 truncate mt-0.5">{item.description}</p>
           )}
-          {item.tags.length > 0 && (
-            <div className="flex gap-1 mt-1">
-              {item.tags.slice(0, 3).map(tag => (
-                <span key={tag.id} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400">{tag.name}</span>
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-2 mt-0.5">
+            {item.location_name && (
+              <span className="text-xs text-stone-400 flex items-center gap-0.5"><MapPin className="w-2.5 h-2.5" />{item.location_name}</span>
+            )}
+            {item.tags.length > 0 && (
+              <div className="flex gap-1">
+                {item.tags.slice(0, 3).map(tag => (
+                  <span key={tag.id} className="text-xs px-1.5 py-0.5 rounded-full bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400">{tag.name}</span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -206,11 +215,15 @@ function ItemCard({ item, viewMode, isSelected, onSelect }: ItemCardProps) {
         )}
 
         <div className="mt-auto pt-2 flex items-center justify-between">
-          {item.domain && (
+          {item.location_name ? (
+            <span className="text-xs text-stone-400 truncate flex items-center gap-1">
+              <MapPin className="w-3 h-3" /> {item.location_name}
+            </span>
+          ) : item.domain ? (
             <span className="text-xs text-stone-400 truncate flex items-center gap-1">
               <Link2 className="w-3 h-3" /> {item.domain}
             </span>
-          )}
+          ) : null}
           <span className="text-xs text-stone-400 ml-auto">
             {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
           </span>
@@ -229,11 +242,21 @@ function ItemCard({ item, viewMode, isSelected, onSelect }: ItemCardProps) {
 }
 
 export default function ItemList() {
-  const { viewMode, setViewMode, searchQuery, setSearchQuery, filterType, setFilterType, selectedItemId, setSelectedItemId, getFilteredItems, selectedFolderId, folders, smartFolders } = useApp();
+  const { viewMode, setViewMode, searchQuery, setSearchQuery, filterType, setFilterType, selectedItemId, setSelectedItemId, getFilteredItems, selectedFolderId, folders, smartFolders, tags } = useApp();
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [showMap, setShowMap] = useState(false);
   const [sortBy, setSortBy] = useState('newest');
 
   const filtered = getFilteredItems();
+
+  // Check if we should show map view (places tag selected or place type filtered)
+  const placesTag = tags.find(t => t.name.toLowerCase() === 'places');
+  const isPlacesView = placesTag && (
+    (selectedFolderId?.startsWith('smart_') && smartFolders.some(sf => sf.id === selectedFolderId.substring(6) && sf.conditions?.some((c: any) => c.field === 'tag' && c.value === placesTag.id))) ||
+    filterType === 'place'
+  );
+  const hasPlaces = filtered.some(i => i.latitude !== null && i.longitude !== null);
+
   const sorted = [...filtered].sort((a, b) => {
     if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     if (sortBy === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
@@ -261,6 +284,16 @@ export default function ItemList() {
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-lg font-semibold text-stone-900 dark:text-stone-50">{title}</h1>
           <div className="flex items-center gap-1">
+            {/* Map toggle for places */}
+            {hasPlaces && (
+              <button
+                onClick={() => setShowMap(!showMap)}
+                className={cn('p-1.5 rounded-lg transition-colors', showMap ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400' : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-300')}
+                title="Toggle map view"
+              >
+                <Map className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={() => setViewMode('list')}
               className={cn('p-1.5 rounded-lg transition-colors', viewMode === 'list' ? 'bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-stone-50' : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-300')}
@@ -327,47 +360,53 @@ export default function ItemList() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {sorted.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-center px-8">
-            <div className="w-12 h-12 bg-stone-100 dark:bg-stone-800 rounded-2xl flex items-center justify-center mb-3">
-              <Plus className="w-6 h-6 text-stone-400" />
+      {showMap ? (
+        <div className="flex-1">
+          <MapView items={filtered} onItemSelect={(id) => { setSelectedItemId(id); setShowMap(false); }} />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          {sorted.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-center px-8">
+              <div className="w-12 h-12 bg-stone-100 dark:bg-stone-800 rounded-2xl flex items-center justify-center mb-3">
+                <Plus className="w-6 h-6 text-stone-400" />
+              </div>
+              <p className="text-sm font-medium text-stone-600 dark:text-stone-400">Nothing here yet</p>
+              <p className="text-xs text-stone-400 dark:text-stone-500 mt-1">Add a link, note, or idea to get started</p>
+              <button
+                onClick={() => setShowQuickAdd(true)}
+                className="mt-4 text-xs px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg hover:bg-stone-700 dark:hover:bg-stone-200 transition-colors"
+              >
+                Add first item
+              </button>
             </div>
-            <p className="text-sm font-medium text-stone-600 dark:text-stone-400">Nothing here yet</p>
-            <p className="text-xs text-stone-400 dark:text-stone-500 mt-1">Add a link, note, or idea to get started</p>
-            <button
-              onClick={() => setShowQuickAdd(true)}
-              className="mt-4 text-xs px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg hover:bg-stone-700 dark:hover:bg-stone-200 transition-colors"
-            >
-              Add first item
-            </button>
-          </div>
-        ) : viewMode === 'list' ? (
-          <div>
-            {sorted.map(item => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                viewMode="list"
-                isSelected={selectedItemId === item.id}
-                onSelect={() => setSelectedItemId(selectedItemId === item.id ? null : item.id)}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-4">
-            {sorted.map(item => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                viewMode="grid"
-                isSelected={selectedItemId === item.id}
-                onSelect={() => setSelectedItemId(selectedItemId === item.id ? null : item.id)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+          ) : viewMode === 'list' ? (
+            <div>
+              {sorted.map(item => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  viewMode="list"
+                  isSelected={selectedItemId === item.id}
+                  onSelect={() => setSelectedItemId(selectedItemId === item.id ? null : item.id)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-4">
+              {sorted.map(item => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  viewMode="grid"
+                  isSelected={selectedItemId === item.id}
+                  onSelect={() => setSelectedItemId(selectedItemId === item.id ? null : item.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <QuickAddModal open={showQuickAdd} onClose={() => setShowQuickAdd(false)} />
     </div>

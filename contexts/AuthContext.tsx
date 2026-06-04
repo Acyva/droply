@@ -9,10 +9,10 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   isTelegramApp: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signInWithTelegram: () => Promise<{ error: Error | null }>;
-  signInWithGoogle: () => Promise<{ error: Error | null }>;
+  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithTelegram: () => Promise<{ error: string | null }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -40,7 +40,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isTelegramApp, setIsTelegramApp] = useState(false);
 
   useEffect(() => {
-    // Check if running in Telegram Mini App
     const isTelegram = !!window.Telegram?.WebApp;
     setIsTelegramApp(isTelegram);
 
@@ -48,12 +47,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.Telegram!.WebApp.ready();
     }
 
-    // Try to get existing session
+    // Check for OAuth callback first
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
 
-      // If in Telegram and no session, try Telegram auth
       if (isTelegram && !session) {
         handleTelegramAuth();
       } else {
@@ -84,7 +82,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const initData = window.Telegram.WebApp.initData;
-
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-auth`,
         {
@@ -106,7 +103,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
 
       if (data.access_token && data.refresh_token) {
-        // Set session manually
         await supabase.auth.setSession({
           access_token: data.access_token,
           refresh_token: data.refresh_token,
@@ -121,22 +117,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error };
+    return { error: error?.message || null };
   };
 
   const signUp = async (email: string, password: string) => {
     const { error } = await supabase.auth.signUp({ email, password });
-    return { error };
+    return { error: error?.message || null };
   };
 
   const signInWithTelegram = async () => {
     if (!window.Telegram?.WebApp?.initData) {
-      return { error: new Error('Not running in Telegram Mini App') };
+      return { error: 'Not running in Telegram Mini App' };
     }
 
     try {
       const initData = window.Telegram.WebApp.initData;
-
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-auth`,
         {
@@ -150,8 +145,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
 
       if (!response.ok) {
-        const error = await response.json();
-        return { error: new Error(error.error || 'Telegram auth failed') };
+        const err = await response.json();
+        return { error: err.error || 'Telegram auth failed' };
       }
 
       const data = await response.json();
@@ -164,18 +159,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null };
       }
 
-      return { error: new Error('Failed to get session') };
+      return { error: 'Failed to get session' };
     } catch (error) {
-      return { error: error instanceof Error ? error : new Error('Unknown error') };
+      return { error: error instanceof Error ? error.message : 'Unknown error' };
     }
   };
 
   const signInWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/` },
-    });
-    return { error };
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/`,
+          skipBrowserRedirect: false,
+        },
+      });
+      return { error: error?.message || null };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Google sign-in failed' };
+    }
   };
 
   const signOut = async () => {

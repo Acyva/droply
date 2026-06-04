@@ -25,11 +25,12 @@ import {
   Calendar,
   RefreshCw,
   ChevronDown,
+  MapPin,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
-const ITEM_TYPES = ['link', 'note', 'movie', 'book', 'sport', 'wishlist', 'custom'];
+const ITEM_TYPES = ['link', 'note', 'movie', 'book', 'sport', 'wishlist', 'place', 'custom'];
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
   link: <Globe className="w-4 h-4" />,
@@ -38,11 +39,12 @@ const TYPE_ICONS: Record<string, React.ReactNode> = {
   book: <BookOpen className="w-4 h-4" />,
   sport: <Trophy className="w-4 h-4" />,
   wishlist: <Heart className="w-4 h-4" />,
+  place: <MapPin className="w-4 h-4" />,
   custom: <Tag className="w-4 h-4" />,
 };
 
 export default function DetailPanel() {
-  const { selectedItemId, setSelectedItemId, items, updateItem, deleteItem, toggleFavorite, toggleArchive, folders, tags, setItemTags, createTag, refreshItems } = useApp();
+  const { selectedItemId, setSelectedItemId, items, updateItem, deleteItem, toggleFavorite, toggleArchive, folders, tags, setItemTags, createTag } = useApp();
   const item = items.find(i => i.id === selectedItemId);
   const [editing, setEditing] = useState<Record<string, boolean>>({});
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
@@ -56,6 +58,8 @@ export default function DetailPanel() {
         description: item.description,
         url: item.url,
         personal_notes: item.personal_notes,
+        location_name: item.location_name || '',
+        location_address: item.location_address || '',
       });
     }
   }, [item?.id]);
@@ -93,8 +97,6 @@ export default function DetailPanel() {
   const handleMoveToFolder = async (folderId: string | null) => {
     await updateItem(item.id, { folder_id: folderId });
   };
-
-  const currentFolder = folders.find(f => f.id === item.folder_id);
 
   return (
     <div className="h-full flex flex-col bg-white dark:bg-stone-900 border-l border-stone-200 dark:border-stone-800">
@@ -205,6 +207,61 @@ export default function DetailPanel() {
           )}
         </div>
 
+        {/* Location section */}
+        {(item.type === 'place' || item.latitude) && (
+          <div className="p-3 bg-stone-50 dark:bg-stone-800 rounded-lg space-y-3">
+            <div className="flex items-center gap-2 text-xs font-medium text-stone-400 dark:text-stone-500 uppercase tracking-wide">
+              <MapPin className="w-3.5 h-3.5" /> Location
+            </div>
+
+            {editing.location_name ? (
+              <div className="flex items-center gap-2">
+                <input
+                  value={fieldValues.location_name}
+                  onChange={e => setFieldValues(v => ({ ...v, location_name: e.target.value }))}
+                  className="flex-1 text-sm bg-white dark:bg-stone-900 rounded-lg px-2 py-1 outline-none border border-stone-200 dark:border-stone-700"
+                  autoFocus
+                  placeholder="Place name..."
+                />
+                <button onClick={() => saveField('location_name')} className="p-1 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded flex-shrink-0">
+                  <Check className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <div className="group flex items-center gap-2 cursor-pointer" onClick={() => startEdit('location_name')}>
+                <span className="flex-1 text-sm text-stone-700 dark:text-stone-300">{item.location_name || <span className="text-stone-300 italic">Add place name...</span>}</span>
+                <Edit3 className="w-3 h-3 text-stone-300 opacity-0 group-hover:opacity-100" />
+              </div>
+            )}
+
+            {editing.location_address ? (
+              <div className="flex items-center gap-2">
+                <input
+                  value={fieldValues.location_address}
+                  onChange={e => setFieldValues(v => ({ ...v, location_address: e.target.value }))}
+                  className="flex-1 text-sm bg-white dark:bg-stone-900 rounded-lg px-2 py-1 outline-none border border-stone-200 dark:border-stone-700"
+                  autoFocus
+                  placeholder="Address..."
+                />
+                <button onClick={() => saveField('location_address')} className="p-1 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded flex-shrink-0">
+                  <Check className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <div className="group flex items-center gap-2 cursor-pointer" onClick={() => startEdit('location_address')}>
+                <span className="flex-1 text-xs text-stone-500 dark:text-stone-400">{item.location_address || <span className="text-stone-300 italic">Add address...</span>}</span>
+                <Edit3 className="w-3 h-3 text-stone-300 opacity-0 group-hover:opacity-100" />
+              </div>
+            )}
+
+            {item.latitude && item.longitude && (
+              <div className="text-xs text-stone-400">
+                {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}
+              </div>
+            )}
+          </div>
+        )}
+
         <div>
           <label className="text-xs font-medium text-stone-400 dark:text-stone-500 uppercase tracking-wide mb-1.5 block">Personal notes</label>
           {editing.personal_notes ? (
@@ -234,9 +291,9 @@ export default function DetailPanel() {
           <label className="text-xs font-medium text-stone-400 dark:text-stone-500 uppercase tracking-wide mb-1.5 block">Tags</label>
           <div className="flex flex-wrap gap-1.5">
             {item.tags.map(tag => (
-              <span key={tag.id} className="flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 group">
+              <span key={tag.id} className="flex items-center gap-1 text-xs px-2 py-1 rounded-full text-white" style={{ backgroundColor: tag.color }}>
                 {tag.name}
-                <button onClick={() => handleRemoveTag(tag.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all">
+                <button onClick={() => handleRemoveTag(tag.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-200 transition-all">
                   <X className="w-3 h-3" />
                 </button>
               </span>
@@ -286,6 +343,12 @@ export default function DetailPanel() {
             <div className="flex items-center gap-2 text-xs text-stone-400 dark:text-stone-500">
               <Link2 className="w-3.5 h-3.5" />
               <span>{item.domain}</span>
+            </div>
+          )}
+          {item.latitude && item.longitude && (
+            <div className="flex items-center gap-2 text-xs text-stone-400 dark:text-stone-500">
+              <MapPin className="w-3.5 h-3.5" />
+              <span>{item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}</span>
             </div>
           )}
         </div>

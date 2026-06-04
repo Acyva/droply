@@ -6,7 +6,6 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-// Using a simplified database type that avoids TypeScript overload issues with supabase-js
 export type Database = {
   public: {
     Tables: {
@@ -66,6 +65,10 @@ export type Database = {
           is_favorite: boolean;
           is_archived: boolean;
           sort_order: number;
+          latitude: number | null;
+          longitude: number | null;
+          location_name: string | null;
+          location_address: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -84,6 +87,10 @@ export type Database = {
           is_favorite?: boolean;
           is_archived?: boolean;
           sort_order?: number;
+          latitude?: number | null;
+          longitude?: number | null;
+          location_name?: string | null;
+          location_address?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -102,6 +109,10 @@ export type Database = {
           is_favorite?: boolean;
           is_archived?: boolean;
           sort_order?: number;
+          latitude?: number | null;
+          longitude?: number | null;
+          location_name?: string | null;
+          location_address?: string | null;
           updated_at?: string;
         };
       };
@@ -166,4 +177,5 @@ export type ItemType =
   | 'book'
   | 'sport'
   | 'wishlist'
+  | 'place'
   | 'custom';

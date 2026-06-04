@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { X, Loader2, Globe, FileText, Film, BookOpen, Heart, Trophy, Tag, Link2, FolderOpen } from 'lucide-react';
+import { X, Loader2, Globe, FileText, Film, BookOpen, Heart, Trophy, Tag, Link2, FolderOpen, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
 
 const ITEM_TYPES = [
   { value: 'link', label: 'Link', icon: <Globe className="w-4 h-4" /> },
@@ -13,6 +12,7 @@ const ITEM_TYPES = [
   { value: 'book', label: 'Book', icon: <BookOpen className="w-4 h-4" /> },
   { value: 'sport', label: 'Sport', icon: <Trophy className="w-4 h-4" /> },
   { value: 'wishlist', label: 'Wishlist', icon: <Heart className="w-4 h-4" /> },
+  { value: 'place', label: 'Place', icon: <MapPin className="w-4 h-4" /> },
   { value: 'custom', label: 'Custom', icon: <Tag className="w-4 h-4" /> },
 ];
 
@@ -20,9 +20,20 @@ interface QuickAddModalProps {
   open: boolean;
   onClose: () => void;
   initialFolderId?: string | null;
+  initialData?: {
+    type?: string;
+    title?: string;
+    url?: string;
+    description?: string;
+    personalNotes?: string;
+    latitude?: number;
+    longitude?: number;
+    locationName?: string;
+    locationAddress?: string;
+  };
 }
 
-export default function QuickAddModal({ open, onClose, initialFolderId }: QuickAddModalProps) {
+export default function QuickAddModal({ open, onClose, initialFolderId, initialData }: QuickAddModalProps) {
   const { createItem, folders, tags, createTag, setItemTags, selectedFolderId } = useApp();
   const [type, setType] = useState('link');
   const [url, setUrl] = useState('');
@@ -35,6 +46,11 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
   const [fetchingMeta, setFetchingMeta] = useState(false);
   const [loading, setLoading] = useState(false);
   const [metaFetched, setMetaFetched] = useState(false);
+  // Location fields
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+  const [locationName, setLocationName] = useState('');
+  const [locationAddress, setLocationAddress] = useState('');
 
   useEffect(() => {
     if (!open) {
@@ -46,8 +62,23 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
       setSelectedTags([]);
       setTagInput('');
       setMetaFetched(false);
+      setLatitude('');
+      setLongitude('');
+      setLocationName('');
+      setLocationAddress('');
     }
-  }, [open]);
+    if (open && initialData) {
+      if (initialData.type) setType(initialData.type);
+      if (initialData.title) setTitle(initialData.title);
+      if (initialData.url) setUrl(initialData.url);
+      if (initialData.description) setDescription(initialData.description);
+      if (initialData.personalNotes) setPersonalNotes(initialData.personalNotes);
+      if (initialData.latitude != null) setLatitude(String(initialData.latitude));
+      if (initialData.longitude != null) setLongitude(String(initialData.longitude));
+      if (initialData.locationName) setLocationName(initialData.locationName);
+      if (initialData.locationAddress) setLocationAddress(initialData.locationAddress);
+    }
+  }, [open, initialData]);
 
   useEffect(() => {
     if (selectedFolderId && !['all', 'favorites', 'recent', 'archive'].includes(selectedFolderId)) {
@@ -92,7 +123,7 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title && !url && !personalNotes) return;
+    if (!title && !url && !personalNotes && !locationName) return;
     setLoading(true);
     let domain = '';
     let faviconUrl = '';
@@ -103,16 +134,27 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
         faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
       } catch {}
     }
-    const item = await createItem({
+
+    const itemData: any = {
       type,
       url,
-      title: title || url || '',
+      title: title || locationName || url || '',
       description,
       personal_notes: personalNotes,
       folder_id: folderId || null,
       domain,
       favicon_url: faviconUrl,
-    });
+    };
+
+    // Add location data for place type
+    if (type === 'place' || latitude || longitude) {
+      itemData.latitude = latitude ? parseFloat(latitude) : null;
+      itemData.longitude = longitude ? parseFloat(longitude) : null;
+      itemData.location_name = locationName || null;
+      itemData.location_address = locationAddress || null;
+    }
+
+    const item = await createItem(itemData);
     if (item && selectedTags.length > 0) {
       await setItemTags(item.id, selectedTags);
     }
@@ -126,8 +168,8 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white dark:bg-stone-900 rounded-2xl shadow-2xl w-full max-w-lg border border-stone-200 dark:border-stone-700 overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 dark:border-stone-800">
+      <div className="bg-white dark:bg-stone-900 rounded-2xl shadow-2xl w-full max-w-lg border border-stone-200 dark:border-stone-700 overflow-hidden max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100 dark:border-stone-800 flex-shrink-0">
           <h2 className="text-sm font-semibold text-stone-900 dark:text-stone-50">Add to droply</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors">
             <X className="w-4 h-4" />
@@ -135,7 +177,7 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="px-5 py-4 space-y-4">
+          <div className="px-5 py-4 space-y-4 overflow-y-auto">
             <div>
               <label className="text-xs font-medium text-stone-400 uppercase tracking-wide mb-1.5 block">Type</label>
               <div className="flex flex-wrap gap-1.5">
@@ -179,7 +221,7 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
               <input
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                placeholder="Enter a title..."
+                placeholder={type === 'place' ? 'Place name...' : 'Enter a title...'}
                 className="w-full text-sm px-3 py-2 bg-stone-50 dark:bg-stone-800 rounded-lg border border-stone-200 dark:border-stone-700 outline-none focus:border-stone-400 dark:focus:border-stone-500 placeholder:text-stone-400"
               />
             </div>
@@ -194,6 +236,57 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
                 className="w-full text-sm px-3 py-2 bg-stone-50 dark:bg-stone-800 rounded-lg border border-stone-200 dark:border-stone-700 outline-none focus:border-stone-400 dark:focus:border-stone-500 resize-none placeholder:text-stone-400"
               />
             </div>
+
+            {/* Location fields for place type */}
+            {type === 'place' && (
+              <div className="p-3 bg-stone-50 dark:bg-stone-800 rounded-lg space-y-3">
+                <div className="flex items-center gap-2 text-xs font-medium text-stone-400 uppercase tracking-wide">
+                  <MapPin className="w-3.5 h-3.5" /> Location
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-stone-400 mb-1 block">Latitude</label>
+                    <input
+                      value={latitude}
+                      onChange={e => setLatitude(e.target.value)}
+                      placeholder="48.8566"
+                      type="number"
+                      step="any"
+                      className="w-full text-sm px-3 py-2 bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-700 outline-none focus:border-stone-400 dark:focus:border-stone-500 placeholder:text-stone-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-stone-400 mb-1 block">Longitude</label>
+                    <input
+                      value={longitude}
+                      onChange={e => setLongitude(e.target.value)}
+                      placeholder="2.3522"
+                      type="number"
+                      step="any"
+                      className="w-full text-sm px-3 py-2 bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-700 outline-none focus:border-stone-400 dark:focus:border-stone-500 placeholder:text-stone-400"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-stone-400 mb-1 block">Location name</label>
+                  <input
+                    value={locationName}
+                    onChange={e => setLocationName(e.target.value)}
+                    placeholder="Eiffel Tower"
+                    className="w-full text-sm px-3 py-2 bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-700 outline-none focus:border-stone-400 dark:focus:border-stone-500 placeholder:text-stone-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-stone-400 mb-1 block">Address</label>
+                  <input
+                    value={locationAddress}
+                    onChange={e => setLocationAddress(e.target.value)}
+                    placeholder="Champ de Mars, Paris"
+                    className="w-full text-sm px-3 py-2 bg-white dark:bg-stone-900 rounded-lg border border-stone-200 dark:border-stone-700 outline-none focus:border-stone-400 dark:focus:border-stone-500 placeholder:text-stone-400"
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-medium text-stone-400 uppercase tracking-wide mb-1.5 block">Personal notes</label>
@@ -225,7 +318,7 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
                   {selectedTags.map(tagId => {
                     const tag = tags.find(t => t.id === tagId);
                     return tag ? (
-                      <span key={tagId} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">
+                      <span key={tagId} className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: tag.color }}>
                         {tag.name}
                         <button type="button" onClick={() => setSelectedTags(s => s.filter(id => id !== tagId))}>
                           <X className="w-3 h-3" />
@@ -245,7 +338,7 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 px-5 py-4 border-t border-stone-100 dark:border-stone-800">
+          <div className="flex justify-end gap-2 px-5 py-4 border-t border-stone-100 dark:border-stone-800 flex-shrink-0">
             <button
               type="button"
               onClick={onClose}
@@ -255,7 +348,7 @@ export default function QuickAddModal({ open, onClose, initialFolderId }: QuickA
             </button>
             <button
               type="submit"
-              disabled={loading || (!title && !url && !personalNotes)}
+              disabled={loading || (!title && !url && !personalNotes && !locationName)}
               className="flex items-center gap-2 px-5 py-2 text-sm font-medium bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg hover:bg-stone-700 dark:hover:bg-stone-200 disabled:opacity-50 transition-colors"
             >
               {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

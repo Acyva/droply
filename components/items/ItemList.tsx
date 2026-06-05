@@ -294,7 +294,7 @@ export default function ItemList() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col min-h-0">
       <div className="flex-shrink-0 px-4 pt-4 pb-2 border-b border-stone-100 dark:border-stone-800">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-lg font-semibold text-stone-900 dark:text-stone-50">{title}</h1>
@@ -376,7 +376,7 @@ export default function ItemList() {
       </div>
 
       {showMap ? (
-        <div className="flex-1">
+        <div className="flex-1 min-h-0">
           <MapView items={filtered} onItemSelect={(id) => { setSelectedItemId(id); setShowMap(false); }} />
         </div>
       ) : (

@@ -1,227 +1,276 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useApp } from '@/contexts/AppContext';
 import type { ItemWithTags } from '@/lib/database.types';
-import { MapPin, X, Star, Edit3, Check, Trash2, ExternalLink } from 'lucide-react';
+import { MapPin, X, Star, Trash2, ExternalLink, Navigation } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useApp } from '@/contexts/AppContext';
 
 interface MapViewProps {
   items: ItemWithTags[];
   onItemSelect: (id: string) => void;
 }
 
+declare global {
+  interface Window { L: any; }
+}
+
+const CARTO_TILE = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+const CARTO_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+function loadLeaflet(): Promise<any> {
+  return new Promise((resolve) => {
+    if (window.L) { resolve(window.L); return; }
+
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    link.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
+    link.crossOrigin = '';
+    document.head.appendChild(link);
+
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WPeE=';
+    script.crossOrigin = '';
+    script.onload = () => resolve(window.L);
+    document.head.appendChild(script);
+  });
+}
+
+function makeIcon(L: any, color: string, isFavorite: boolean) {
+  return L.divIcon({
+    className: '',
+    iconSize: [36, 44],
+    iconAnchor: [18, 44],
+    popupAnchor: [0, -46],
+    html: `
+      <div style="position:relative;width:36px;height:44px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.3))">
+        <svg viewBox="0 0 36 44" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%">
+          <path d="M18 2C10.27 2 4 8.27 4 16c0 10.5 14 26 14 26s14-15.5 14-26c0-7.73-6.27-14-14-14z"
+            fill="${color}" stroke="white" stroke-width="2"/>
+          <circle cx="18" cy="16" r="6" fill="white" opacity="0.9"/>
+          ${isFavorite ? `<text x="18" y="20" text-anchor="middle" font-size="8" fill="${color}">★</text>` : `<circle cx="18" cy="16" r="3" fill="${color}"/>`}
+        </svg>
+      </div>`,
+  });
+}
+
 export default function MapView({ items, onItemSelect }: MapViewProps) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const markersRef = useRef<any>(null);
-  const { updateItem, deleteItem, toggleFavorite } = useApp();
-  const [selectedPlace, setSelectedPlace] = useState<ItemWithTags | null>(null);
-  const [editingField, setEditingField] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-  const [mapReady, setMapReady] = useState(false);
+  const mapElRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const { toggleFavorite, deleteItem } = useApp();
+  const [selected, setSelected] = useState<ItemWithTags | null>(null);
+  const [ready, setReady] = useState(false);
 
-  const places = items.filter(i => i.latitude !== null && i.longitude !== null);
+  const places = items.filter(i => i.latitude != null && i.longitude != null);
 
+  // Init map once
   useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
+    if (!mapElRef.current || mapRef.current) return;
+    let destroyed = false;
 
-    let map: any;
+    loadLeaflet().then((L) => {
+      if (destroyed || !mapElRef.current || mapRef.current) return;
 
-    // Load Leaflet CSS
-    const linkEl = document.createElement('link');
-    linkEl.rel = 'stylesheet';
-    linkEl.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    document.head.appendChild(linkEl);
-
-    // Load Leaflet JS
-    const scriptEl = document.createElement('script');
-    scriptEl.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    scriptEl.onload = () => {
-      const L = (window as any).L;
-      if (!L || !mapRef.current) return;
-
-      map = L.map(mapRef.current, {
-        zoomControl: true,
+      const map = L.map(mapElRef.current, {
+        zoomControl: false,
         attributionControl: true,
-      }).setView([48.8566, 2.3522], 4);
+      }).setView([48.8566, 2.3522], 3);
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19,
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      L.tileLayer(CARTO_TILE, {
+        attribution: CARTO_ATTR,
+        subdomains: 'abcd',
+        maxZoom: 20,
       }).addTo(map);
 
-      markersRef.current = L.layerGroup().addTo(map);
-      mapInstanceRef.current = map;
-      setMapReady(true);
-    };
-    document.head.appendChild(scriptEl);
+      mapRef.current = map;
+      setReady(true);
+    });
 
     return () => {
-      if (map) {
-        map.remove();
-        mapInstanceRef.current = null;
+      destroyed = true;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
       }
     };
   }, []);
 
+  // Update markers when places change
   useEffect(() => {
-    if (!mapInstanceRef.current || !markersRef.current || !mapReady) return;
-
-    const L = (window as any).L;
+    if (!ready || !mapRef.current) return;
+    const L = window.L;
     if (!L) return;
+    const map = mapRef.current;
 
-    markersRef.current.clearLayers();
+    // Remove old markers
+    markersRef.current.forEach(m => map.removeLayer(m));
+    markersRef.current = [];
 
-    places.forEach(place => {
-      const color = place.tags[0]?.color || '#EF4444';
-      const customIcon = L.divIcon({
-        className: 'custom-marker',
-        html: `<div style="background:${color};width:28px;height:28px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center">
-          <svg xmlns="http://www.w3.org/2000/svg" style="transform:rotate(45deg);width:14px;height:14px;color:white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-        </div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 28],
-        popupAnchor: [0, -28],
+    if (places.length === 0) return;
+
+    const newMarkers = places.map(place => {
+      const color = place.tags[0]?.color || '#0ea5e9';
+      const icon = makeIcon(L, color, place.is_favorite);
+      const marker = L.marker([place.latitude!, place.longitude!], { icon });
+
+      marker.on('click', () => {
+        setSelected(place);
+        map.panTo([place.latitude!, place.longitude!], { animate: true, duration: 0.5 });
       });
 
-      const marker = L.marker([place.latitude!, place.longitude!], { icon: customIcon });
-      marker.on('click', () => setSelectedPlace(place));
-      markersRef.current!.addLayer(marker);
+      marker.addTo(map);
+      return marker;
     });
 
-    if (places.length > 0) {
-      const bounds = L.latLngBounds(places.map(p => [p.latitude!, p.longitude!] as [number, number]));
-      mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+    markersRef.current = newMarkers;
+
+    // Fit bounds to show all markers
+    const coords = places.map(p => [p.latitude!, p.longitude!] as [number, number]);
+    if (coords.length === 1) {
+      map.setView(coords[0], 13, { animate: true });
+    } else {
+      const bounds = L.latLngBounds(coords);
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 14, animate: true });
     }
-  }, [places, mapReady]);
+  }, [ready, places.length, places.map(p => p.id).join(',')]);
 
-  const saveField = async (field: string) => {
-    if (!selectedPlace) return;
-    await updateItem(selectedPlace.id, { [field]: editValue });
-    setSelectedPlace({ ...selectedPlace, [field]: editValue });
-    setEditingField(null);
-  };
-
-  const handleDelete = async () => {
-    if (!selectedPlace) return;
-    await deleteItem(selectedPlace.id);
-    setSelectedPlace(null);
+  const handleDelete = async (item: ItemWithTags) => {
+    await deleteItem(item.id);
+    setSelected(null);
   };
 
   return (
-    <div className="relative h-full w-full">
-      <div ref={mapRef} className="h-full w-full" />
+    <div className="relative w-full h-full" style={{ minHeight: 0 }}>
+      {/* Map container — must have explicit height */}
+      <div ref={mapElRef} className="absolute inset-0" />
 
+      {/* Empty state */}
       {places.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-stone-50/80 dark:bg-stone-900/80 z-[1000]">
-          <div className="text-center space-y-3 p-6">
-            <div className="w-12 h-12 mx-auto rounded-full bg-stone-200 dark:bg-stone-700 flex items-center justify-center">
-              <MapPin className="w-6 h-6 text-stone-400" />
+        <div className="absolute inset-0 flex items-center justify-center bg-stone-50/90 dark:bg-stone-900/90 z-[500]">
+          <div className="text-center space-y-3 p-8">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center">
+              <MapPin className="w-7 h-7 text-stone-400" />
             </div>
-            <h3 className="text-sm font-medium text-stone-600 dark:text-stone-300">No places saved yet</h3>
-            <p className="text-xs text-stone-400 dark:text-stone-500 max-w-xs">
-              Add items with a &quot;place&quot; type and location to see them on this map.
+            <h3 className="text-sm font-semibold text-stone-700 dark:text-stone-300">No places on the map</h3>
+            <p className="text-xs text-stone-400 max-w-xs leading-relaxed">
+              Add items with type &quot;Place&quot; and pick a location — they&apos;ll appear here as pins.
             </p>
           </div>
         </div>
       )}
 
-      {selectedPlace && (
-        <div className="absolute bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 z-[1000] bg-white dark:bg-stone-900 rounded-xl shadow-lg border border-stone-200 dark:border-stone-700 overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-stone-100 dark:border-stone-800">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-stone-500 uppercase tracking-wide">Place</span>
-              {selectedPlace.is_favorite && <Star className="w-3 h-3 fill-amber-500 text-amber-500" />}
-            </div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => toggleFavorite(selectedPlace.id, selectedPlace.is_favorite)} className="p-1 rounded hover:bg-stone-100 dark:hover:bg-stone-800">
-                <Star className={cn('w-3.5 h-3.5', selectedPlace.is_favorite ? 'fill-amber-500 text-amber-500' : 'text-stone-400')} />
-              </button>
-              <button onClick={handleDelete} className="p-1 rounded hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400 hover:text-red-500">
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => onItemSelect(selectedPlace.id)} className="p-1 rounded hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400">
-                <ExternalLink className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => setSelectedPlace(null)} className="p-1 rounded hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-400">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
+      {/* Count badge */}
+      {places.length > 0 && (
+        <div className="absolute top-3 left-3 z-[500] bg-white dark:bg-stone-900 text-stone-700 dark:text-stone-200 text-xs font-medium px-3 py-1.5 rounded-full shadow-md border border-stone-200 dark:border-stone-700 flex items-center gap-1.5">
+          <Navigation className="w-3 h-3" />
+          {places.length} {places.length === 1 ? 'place' : 'places'}
+        </div>
+      )}
 
-          <div className="px-3 py-2 space-y-2 max-h-60 overflow-y-auto">
-            <div>
-              {editingField === 'title' ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    autoFocus
-                    value={editValue}
-                    onChange={e => setEditValue(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') saveField('title'); if (e.key === 'Escape') setEditingField(null); }}
-                    className="flex-1 text-sm font-medium bg-stone-50 dark:bg-stone-800 rounded px-1.5 py-0.5 outline-none"
-                  />
-                  <button onClick={() => saveField('title')} className="p-0.5 text-stone-500 hover:text-stone-700"><Check className="w-3 h-3" /></button>
-                </div>
-              ) : (
-                <div className="group flex items-center gap-1 cursor-pointer" onClick={() => { setEditingField('title'); setEditValue(selectedPlace.title); }}>
-                  <h4 className="text-sm font-medium text-stone-900 dark:text-stone-50 flex-1 truncate">{selectedPlace.title || 'Untitled'}</h4>
-                  <Edit3 className="w-3 h-3 text-stone-300 opacity-0 group-hover:opacity-100" />
-                </div>
-              )}
-            </div>
-
-            <div>
-              {editingField === 'location_name' ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    autoFocus
-                    value={editValue}
-                    onChange={e => setEditValue(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') saveField('location_name'); if (e.key === 'Escape') setEditingField(null); }}
-                    className="flex-1 text-xs bg-stone-50 dark:bg-stone-800 rounded px-1.5 py-0.5 outline-none"
-                    placeholder="Location name..."
-                  />
-                  <button onClick={() => saveField('location_name')} className="p-0.5 text-stone-500"><Check className="w-3 h-3" /></button>
-                </div>
-              ) : (
-                <div className="group flex items-center gap-1 cursor-pointer" onClick={() => { setEditingField('location_name'); setEditValue(selectedPlace.location_name || ''); }}>
-                  <MapPin className="w-3 h-3 text-stone-400 flex-shrink-0" />
-                  <span className="text-xs text-stone-500 dark:text-stone-400 flex-1 truncate">
-                    {selectedPlace.location_name || selectedPlace.location_address || 'Add location name...'}
-                  </span>
-                  <Edit3 className="w-2.5 h-2.5 text-stone-300 opacity-0 group-hover:opacity-100" />
-                </div>
-              )}
-            </div>
-
-            {editingField === 'description' ? (
-              <div className="flex items-start gap-1">
-                <textarea
-                  autoFocus
-                  value={editValue}
-                  onChange={e => setEditValue(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) saveField('description'); }}
-                  className="flex-1 text-xs bg-stone-50 dark:bg-stone-800 rounded px-1.5 py-0.5 outline-none resize-none min-h-[40px]"
-                  placeholder="Description..."
+      {/* Selected place card */}
+      {selected && (
+        <div className="absolute bottom-5 left-3 right-3 md:left-auto md:right-5 md:w-80 z-[500]">
+          <div className="bg-white dark:bg-stone-900 rounded-2xl shadow-xl border border-stone-200 dark:border-stone-700 overflow-hidden">
+            {selected.preview_image_url && (
+              <div className="h-32 w-full overflow-hidden">
+                <img
+                  src={selected.preview_image_url}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  onError={e => { (e.target as HTMLImageElement).parentElement!.style.display = 'none'; }}
                 />
-                <button onClick={() => saveField('description')} className="p-0.5 text-stone-500"><Check className="w-3 h-3" /></button>
-              </div>
-            ) : (
-              <div className="group cursor-pointer" onClick={() => { setEditingField('description'); setEditValue(selectedPlace.description || ''); }}>
-                <p className="text-xs text-stone-400 line-clamp-2">{selectedPlace.description || 'Add description...'}</p>
               </div>
             )}
+            <div className="px-4 py-3">
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-50 leading-snug">
+                  {selected.title || 'Untitled place'}
+                </h3>
+                <button
+                  onClick={() => setSelected(null)}
+                  className="p-0.5 rounded text-stone-400 hover:text-stone-600 flex-shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-            <div className="flex flex-wrap gap-1">
-              {selectedPlace.tags.map(tag => (
-                <span key={tag.id} className="text-[10px] px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: tag.color }}>{tag.name}</span>
-              ))}
+              {(selected.location_name || selected.location_address) && (
+                <div className="flex items-start gap-1 mb-2">
+                  <MapPin className="w-3 h-3 text-stone-400 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed">
+                    {selected.location_name || selected.location_address}
+                  </p>
+                </div>
+              )}
+
+              {selected.description && (
+                <p className="text-xs text-stone-400 dark:text-stone-500 mb-2 line-clamp-2">
+                  {selected.description}
+                </p>
+              )}
+
+              {selected.personal_notes && (
+                <p className="text-xs text-stone-500 dark:text-stone-400 italic mb-2 line-clamp-2 border-l-2 border-stone-200 dark:border-stone-700 pl-2">
+                  {selected.personal_notes}
+                </p>
+              )}
+
+              {selected.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {selected.tags.map(tag => (
+                    <span
+                      key={tag.id}
+                      className="text-[10px] px-2 py-0.5 rounded-full text-white font-medium"
+                      style={{ backgroundColor: tag.color }}
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-1 pt-1 border-t border-stone-100 dark:border-stone-800">
+                <button
+                  onClick={() => toggleFavorite(selected.id, selected.is_favorite)}
+                  className={cn('p-1.5 rounded-lg transition-colors flex-1 flex items-center justify-center gap-1 text-xs',
+                    selected.is_favorite
+                      ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/20'
+                      : 'text-stone-400 hover:text-amber-500 hover:bg-stone-50 dark:hover:bg-stone-800'
+                  )}
+                >
+                  <Star className={cn('w-3.5 h-3.5', selected.is_favorite && 'fill-amber-500')} />
+                  {selected.is_favorite ? 'Saved' : 'Favorite'}
+                </button>
+                <button
+                  onClick={() => onItemSelect(selected.id)}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors flex-1 flex items-center justify-center gap-1 text-xs"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Details
+                </button>
+                {selected.url && (
+                  <a
+                    href={selected.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="p-1.5 rounded-lg text-stone-400 hover:text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors flex-1 flex items-center justify-center gap-1 text-xs"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Open
+                  </a>
+                )}
+                <button
+                  onClick={() => handleDelete(selected)}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
-
-            {selectedPlace.personal_notes && (
-              <p className="text-xs text-stone-400 line-clamp-2 border-t border-stone-100 dark:border-stone-800 pt-1.5">{selectedPlace.personal_notes}</p>
-            )}
           </div>
         </div>
       )}

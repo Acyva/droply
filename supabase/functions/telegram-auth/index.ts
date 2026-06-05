@@ -16,12 +16,6 @@ interface TelegramUser {
   photo_url?: string;
 }
 
-interface TelegramInitData {
-  user?: TelegramUser;
-  auth_date: number;
-  hash: string;
-}
-
 function validateTelegramData(
   initData: string,
   botToken: string
@@ -29,10 +23,7 @@ function validateTelegramData(
   try {
     const searchParams = new URLSearchParams(initData);
     const hash = searchParams.get("hash");
-
-    if (!hash) {
-      return { valid: false };
-    }
+    if (!hash) return { valid: false };
 
     searchParams.delete("hash");
 
@@ -51,20 +42,15 @@ function validateTelegramData(
       .update(dataCheckString)
       .digest("hex");
 
-    if (computedHash !== hash) {
-      return { valid: false };
-    }
+    if (computedHash !== hash) return { valid: false };
 
+    // Allow up to 24 hours to handle clock drift and cached mini app opens
     const authDate = parseInt(searchParams.get("auth_date") || "0", 10);
     const now = Math.floor(Date.now() / 1000);
-    if (now - authDate > 5 * 60) {
-      return { valid: false };
-    }
+    if (now - authDate > 86400) return { valid: false };
 
     const userData = searchParams.get("user");
-    if (!userData) {
-      return { valid: false };
-    }
+    if (!userData) return { valid: false };
 
     const user: TelegramUser = JSON.parse(userData);
     return { valid: true, user };
@@ -74,12 +60,14 @@ function validateTelegramData(
   }
 }
 
+function derivePassword(telegramId: number, botToken: string): string {
+  // Stable deterministic password: HMAC(botToken, telegramId)
+  return crypto.createHmac("sha256", botToken).update(String(telegramId)).digest("hex");
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
@@ -100,7 +88,6 @@ Deno.serve(async (req: Request) => {
 
     const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
     if (!botToken) {
-      console.error("TELEGRAM_BOT_TOKEN not configured");
       return new Response(
         JSON.stringify({ error: "Server configuration error" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -115,42 +102,37 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
 
-    if (!supabaseUrl || !supabaseServiceKey) {
-      return new Response(
-        JSON.stringify({ error: "Server configuration error" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const email = `telegram_${user.id}@droply.tg`;
+    const password = derivePassword(user.id, botToken);
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Create email from Telegram ID
-    const email = `telegram_${user.id}@telegram.local`;
-    const password = crypto.randomBytes(32).toString("hex");
-
-    // Check if user exists
-    const { data: existingUser } = await supabase
+    // Check if user already exists in telegram_users
+    const { data: existingTgUser } = await supabase
       .from("telegram_users")
       .select("auth_id")
       .eq("telegram_id", user.id)
       .maybeSingle();
 
     let authId: string;
+    let isNewUser = false;
 
-    if (existingUser) {
-      authId = existingUser.auth_id;
+    if (existingTgUser) {
+      authId = existingTgUser.auth_id;
     } else {
-      // Create new user
+      // Create auth user
       const { data: signUpData, error: signUpError } = await supabase.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
         user_metadata: {
+          telegram_id: user.id,
           telegram_username: user.username,
-          telegram_first_name: user.first_name,
+          name: user.first_name + (user.last_name ? ` ${user.last_name}` : ""),
+          avatar_url: user.photo_url,
         },
       });
 
@@ -163,9 +145,9 @@ Deno.serve(async (req: Request) => {
       }
 
       authId = signUpData.user.id;
+      isNewUser = true;
 
-      // Store Telegram user data
-      const { error: insertError } = await supabase.from("telegram_users").insert({
+      await supabase.from("telegram_users").insert({
         auth_id: authId,
         telegram_id: user.id,
         first_name: user.first_name,
@@ -174,25 +156,17 @@ Deno.serve(async (req: Request) => {
         photo_url: user.photo_url || null,
       });
 
-      if (insertError) {
-        console.error("Failed to store Telegram user:", insertError);
-        return new Response(
-          JSON.stringify({ error: "Failed to store Telegram data" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Create default folders
-      await supabase.rpc("create_default_folders_for_user", {
-        p_user_id: authId,
-      });
+      await supabase.rpc("create_default_folders_for_user", { p_user_id: authId });
     }
 
-    // Generate session token
-    const { data: sessionData, error: sessionError } = await supabase.auth.admin.createSession(authId);
+    // Sign in with the derived password to get a real session
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    if (sessionError || !sessionData?.session) {
-      console.error("Failed to create session:", sessionError);
+    if (signInError || !signInData?.session) {
+      console.error("Failed to sign in:", signInError);
       return new Response(
         JSON.stringify({ error: "Failed to create session" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -201,9 +175,10 @@ Deno.serve(async (req: Request) => {
 
     return new Response(
       JSON.stringify({
-        access_token: sessionData.session.access_token,
-        refresh_token: sessionData.session.refresh_token,
-        user: sessionData.user,
+        access_token: signInData.session.access_token,
+        refresh_token: signInData.session.refresh_token,
+        user: signInData.user,
+        is_new_user: isNewUser,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

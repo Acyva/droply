@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import type { ItemWithTags } from '@/lib/database.types';
 import {
@@ -26,6 +26,7 @@ import {
   Link2,
   MapPin,
   Map,
+  Share2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -73,6 +74,19 @@ interface ItemCardProps {
   viewMode: 'grid' | 'list';
   isSelected: boolean;
   onSelect: () => void;
+}
+
+function shareItem(item: ItemWithTags) {
+  const shareData = {
+    title: item.title || 'Shared from droply',
+    text: item.description || '',
+    url: item.url || window.location.href,
+  };
+  if (navigator.share) {
+    navigator.share(shareData).catch(() => {});
+  } else if (item.url) {
+    navigator.clipboard.writeText(item.url).catch(() => {});
+  }
 }
 
 function ItemCard({ item, viewMode, isSelected, onSelect }: ItemCardProps) {
@@ -132,6 +146,9 @@ function ItemCard({ item, viewMode, isSelected, onSelect }: ItemCardProps) {
                   <ExternalLink className="w-3.5 h-3.5 mr-2" /> Open URL
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onClick={e => { e.stopPropagation(); shareItem(item); }}>
+                <Share2 className="w-3.5 h-3.5 mr-2" /> Share
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={e => { e.stopPropagation(); toggleFavorite(item.id, item.is_favorite); }}>
                 {item.is_favorite ? <><StarOff className="w-3.5 h-3.5 mr-2" /> Unfavorite</> : <><Star className="w-3.5 h-3.5 mr-2" /> Favorite</>}
               </DropdownMenuItem>
@@ -191,6 +208,9 @@ function ItemCard({ item, viewMode, isSelected, onSelect }: ItemCardProps) {
                     <ExternalLink className="w-3.5 h-3.5 mr-2" /> Open URL
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem onClick={e => { e.stopPropagation(); shareItem(item); }}>
+                  <Share2 className="w-3.5 h-3.5 mr-2" /> Share
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={e => { e.stopPropagation(); toggleFavorite(item.id, item.is_favorite); }}>
                   {item.is_favorite ? <><StarOff className="w-3.5 h-3.5 mr-2" /> Unfavorite</> : <><Star className="w-3.5 h-3.5 mr-2" /> Favorite</>}
                 </DropdownMenuItem>
@@ -242,20 +262,15 @@ function ItemCard({ item, viewMode, isSelected, onSelect }: ItemCardProps) {
 }
 
 export default function ItemList() {
-  const { viewMode, setViewMode, searchQuery, setSearchQuery, filterType, setFilterType, selectedItemId, setSelectedItemId, getFilteredItems, selectedFolderId, folders, smartFolders, tags } = useApp();
+  const { viewMode, setViewMode, searchQuery, setSearchQuery, filterType, setFilterType, selectedItemId, setSelectedItemId, getFilteredItems, selectedFolderId, folders, smartFolders } = useApp();
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [sortBy, setSortBy] = useState('newest');
 
   const filtered = getFilteredItems();
 
-  // Check if we should show map view (places tag selected or place type filtered)
-  const placesTag = tags.find(t => t.name.toLowerCase() === 'places');
-  const isPlacesView = placesTag && (
-    (selectedFolderId?.startsWith('smart_') && smartFolders.some(sf => sf.id === selectedFolderId.substring(6) && sf.conditions?.some((c: any) => c.field === 'tag' && c.value === placesTag.id))) ||
-    filterType === 'place'
-  );
-  const hasPlaces = filtered.some(i => i.latitude !== null && i.longitude !== null);
+  // Show map toggle when there are any place-type items or items with coordinates
+  const hasPlaces = filtered.some(i => i.type === 'place' || (i.latitude !== null && i.longitude !== null));
 
   const sorted = [...filtered].sort((a, b) => {
     if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();

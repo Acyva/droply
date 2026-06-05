@@ -25,12 +25,13 @@ declare global {
         initData: string;
         initDataUnsafe: any;
         ready: () => void;
-        close: () => void;
-        MainButton: any;
-        BackButton: any;
       };
     };
   }
+}
+
+async function ensureDefaultFolders(userId: string) {
+  await supabase.rpc('create_default_folders_for_user', { p_user_id: userId });
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -40,49 +41,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isTelegramApp, setIsTelegramApp] = useState(false);
 
   useEffect(() => {
-    const isTelegram = !!window.Telegram?.WebApp;
-    setIsTelegramApp(isTelegram);
+    const tg = typeof window !== 'undefined' && !!window.Telegram?.WebApp?.initData;
+    setIsTelegramApp(tg);
+    if (tg) window.Telegram!.WebApp.ready();
 
-    if (isTelegram) {
-      window.Telegram!.WebApp.ready();
-    }
-
-    // Check for OAuth callback first
+    // Restore session (also handles OAuth redirect hash fragments)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
 
-      if (isTelegram && !session) {
-        handleTelegramAuth();
+      if (tg && !session) {
+        handleTelegramAutoAuth().finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      (async () => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
+      setSession(session);
+      setUser(session?.user ?? null);
 
-        if (event === 'SIGNED_IN' && session?.user) {
-          await supabase.rpc('create_default_folders_for_user', { p_user_id: session.user.id });
-        }
-      })();
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
+        // Ensure folders exist for any sign-in method (Google, email, Telegram)
+        ensureDefaultFolders(session.user.id);
+      }
+
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const handleTelegramAuth = async () => {
+  async function handleTelegramAutoAuth() {
+    if (!window.Telegram?.WebApp?.initData) return;
     try {
-      if (!window.Telegram?.WebApp?.initData) {
-        setLoading(false);
-        return;
-      }
-
-      const initData = window.Telegram.WebApp.initData;
-      const response = await fetch(
+      const res = await fetch(
         `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-auth`,
         {
           method: 'POST',
@@ -90,49 +83,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
           },
-          body: JSON.stringify({ initData }),
+          body: JSON.stringify({ initData: window.Telegram.WebApp.initData }),
         }
       );
-
-      if (!response.ok) {
-        console.error('Telegram auth failed:', response.statusText);
-        setLoading(false);
-        return;
-      }
-
-      const data = await response.json();
-
+      if (!res.ok) return;
+      const data = await res.json();
       if (data.access_token && data.refresh_token) {
-        await supabase.auth.setSession({
-          access_token: data.access_token,
-          refresh_token: data.refresh_token,
-        });
+        await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
       }
-    } catch (error) {
-      console.error('Telegram auth error:', error);
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error('Telegram auto-auth failed:', err);
     }
-  };
+  }
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message || null };
+    return { error: error?.message ?? null };
   };
 
   const signUp = async (email: string, password: string) => {
     const { error } = await supabase.auth.signUp({ email, password });
-    return { error: error?.message || null };
+    return { error: error?.message ?? null };
   };
 
   const signInWithTelegram = async () => {
-    if (!window.Telegram?.WebApp?.initData) {
-      return { error: 'Not running in Telegram Mini App' };
-    }
-
+    if (!window.Telegram?.WebApp?.initData) return { error: 'Not running inside Telegram' };
     try {
-      const initData = window.Telegram.WebApp.initData;
-      const response = await fetch(
+      const res = await fetch(
         `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/telegram-auth`,
         {
           method: 'POST',
@@ -140,28 +117,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
           },
-          body: JSON.stringify({ initData }),
+          body: JSON.stringify({ initData: window.Telegram.WebApp.initData }),
         }
       );
-
-      if (!response.ok) {
-        const err = await response.json();
-        return { error: err.error || 'Telegram auth failed' };
-      }
-
-      const data = await response.json();
-
+      const data = await res.json();
+      if (!res.ok) return { error: data.error ?? 'Auth failed' };
       if (data.access_token && data.refresh_token) {
-        await supabase.auth.setSession({
-          access_token: data.access_token,
-          refresh_token: data.refresh_token,
-        });
+        await supabase.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
         return { error: null };
       }
-
-      return { error: 'Failed to get session' };
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : 'Unknown error' };
+      return { error: 'No session returned' };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'Unknown error' };
     }
   };
 
@@ -170,13 +137,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/`,
-          skipBrowserRedirect: false,
+          redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/` : undefined,
         },
       });
-      return { error: error?.message || null };
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : 'Google sign-in failed' };
+      // signInWithOAuth triggers a full page redirect — only reaches here on error
+      return { error: error?.message ?? null };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'Google sign-in failed' };
     }
   };
 
@@ -192,7 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 }

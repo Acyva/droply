@@ -7,14 +7,12 @@ import {
   X,
   ExternalLink,
   Star,
-  StarOff,
   Archive,
   ArchiveRestore,
   Trash2,
   Edit3,
   Check,
   Tag,
-  FolderOpen,
   Link2,
   Globe,
   FileText,
@@ -24,8 +22,8 @@ import {
   Trophy,
   Calendar,
   RefreshCw,
-  ChevronDown,
   MapPin,
+  Share2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -98,6 +96,22 @@ export default function DetailPanel() {
     await updateItem(item.id, { folder_id: folderId });
   };
 
+  const handleShare = async () => {
+    if (!item) return;
+    const shareData = {
+      title: item.title || 'Shared from droply',
+      text: item.description || item.personal_notes || '',
+      url: item.url || window.location.href,
+    };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(item.url || window.location.href);
+      }
+    } catch {}
+  };
+
   return (
     <div className="h-full flex flex-col bg-white dark:bg-stone-900 border-l border-stone-200 dark:border-stone-800">
       <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100 dark:border-stone-800 flex-shrink-0">
@@ -117,6 +131,13 @@ export default function DetailPanel() {
             className={cn('p-1.5 rounded-lg transition-colors', item.is_favorite ? 'text-amber-500' : 'text-stone-400 hover:text-amber-500')}
           >
             {item.is_favorite ? <Star className="w-4 h-4 fill-amber-500" /> : <Star className="w-4 h-4" />}
+          </button>
+          <button
+            onClick={handleShare}
+            className="p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-300 transition-colors"
+            title="Share"
+          >
+            <Share2 className="w-4 h-4" />
           </button>
           <button
             onClick={() => toggleArchive(item.id, item.is_archived)}

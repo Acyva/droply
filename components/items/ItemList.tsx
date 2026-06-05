@@ -376,7 +376,7 @@ export default function ItemList() {
       </div>
 
       {showMap ? (
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 relative overflow-hidden">
           <MapView items={filtered} onItemSelect={(id) => { setSelectedItemId(id); setShowMap(false); }} />
         </div>
       ) : (

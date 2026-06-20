@@ -37,7 +37,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
-import QuickAddModal from '@/components/modals/QuickAddModal';
 import MapView from '@/components/map/MapView';
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
@@ -263,7 +262,6 @@ function ItemCard({ item, viewMode, isSelected, onSelect }: ItemCardProps) {
 
 export default function ItemList() {
   const { viewMode, setViewMode, searchQuery, setSearchQuery, filterType, setFilterType, selectedItemId, setSelectedItemId, getFilteredItems, selectedFolderId, folders, smartFolders } = useApp();
-  const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [sortBy, setSortBy] = useState('newest');
 
@@ -337,12 +335,6 @@ export default function ItemList() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <button
-              onClick={() => setShowQuickAdd(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-xs font-medium rounded-lg hover:bg-stone-700 dark:hover:bg-stone-200 transition-colors ml-1"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add
-            </button>
           </div>
         </div>
 
@@ -388,12 +380,6 @@ export default function ItemList() {
               </div>
               <p className="text-sm font-medium text-stone-600 dark:text-stone-400">Nothing here yet</p>
               <p className="text-xs text-stone-400 dark:text-stone-500 mt-1">Add a link, note, or idea to get started</p>
-              <button
-                onClick={() => setShowQuickAdd(true)}
-                className="mt-4 text-xs px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg hover:bg-stone-700 dark:hover:bg-stone-200 transition-colors"
-              >
-                Add first item
-              </button>
             </div>
           ) : viewMode === 'list' ? (
             <div>
@@ -423,7 +409,6 @@ export default function ItemList() {
         </div>
       )}
 
-      <QuickAddModal open={showQuickAdd} onClose={() => setShowQuickAdd(false)} />
     </div>
   );
 }

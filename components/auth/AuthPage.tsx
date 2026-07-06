@@ -1,11 +1,34 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { BookmarkIcon, Loader2 } from 'lucide-react';
+import { BookmarkIcon, Loader2, Check, X, AlertTriangle } from 'lucide-react';
+
+function checkPasswordStrength(password: string): { score: number; checks: { label: string; passed: boolean }[] } {
+  const checks = [
+    { label: 'At least 8 characters', passed: password.length >= 8 },
+    { label: 'Uppercase letter', passed: /[A-Z]/.test(password) },
+    { label: 'Lowercase letter', passed: /[a-z]/.test(password) },
+    { label: 'Number', passed: /[0-9]/.test(password) },
+    { label: 'Special character (!@#$%^&*)', passed: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) },
+  ];
+  const score = checks.filter(c => c.passed).length;
+  return { score, checks };
+}
+
+const COMMON_PASSWORDS = [
+  'password', '123456', '12345678', 'qwerty', 'abc123', 'monkey', 'letmein',
+  'dragon', '111111', 'baseball', 'iloveyou', 'trustno1', 'sunshine', 'master',
+  'welcome', 'shadow', 'ashley', 'football', 'jesus', 'michael', 'ninja', 'mustang',
+  'password1', 'password123', 'admin', 'login', 'passw0rd', 'hello', 'charlie', 'donald'
+];
+
+function isCommonPassword(password: string): boolean {
+  return COMMON_PASSWORDS.includes(password.toLowerCase());
+}
 
 export default function AuthPage() {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
@@ -15,6 +38,9 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const { signIn, signUp, signInWithTelegram, signInWithGoogle, isTelegramApp } = useAuth();
+
+  const passwordStrength = useMemo(() => checkPasswordStrength(password), [password]);
+  const isWeakPassword = isCommonPassword(password);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -25,6 +51,23 @@ export default function AuthPage() {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    // Password validation for signup
+    if (mode === 'signup') {
+      if (password.length < 8) {
+        setError('Password must be at least 8 characters long.');
+        return;
+      }
+      if (isWeakPassword) {
+        setError('This password is too common. Please choose a stronger password.');
+        return;
+      }
+      if (passwordStrength.score < 3) {
+        setError('Please use a stronger password with a mix of letters, numbers, and symbols.');
+        return;
+      }
+    }
+
     setLoading(true);
     if (mode === 'signin') {
       const { error } = await signIn(email, password);
@@ -174,11 +217,48 @@ export default function AuthPage() {
                     type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder={mode === 'signup' ? 'Create a strong password' : '••••••••'}
                     required
                     minLength={6}
                     className="mt-1 bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-lg"
                   />
+                  {mode === 'signup' && password && (
+                    <div className="mt-2 space-y-1.5">
+                      {isWeakPassword && (
+                        <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          This password appears in common breach lists
+                        </div>
+                      )}
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4, 5].map(i => (
+                          <div
+                            key={i}
+                            className={`h-1 flex-1 rounded-full transition-colors ${
+                              i <= passwordStrength.score
+                                ? passwordStrength.score <= 2 ? 'bg-red-500'
+                                : passwordStrength.score <= 3 ? 'bg-amber-500'
+                                : 'bg-emerald-500'
+                                : 'bg-stone-200 dark:bg-stone-700'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <div className="space-y-0.5">
+                        {passwordStrength.checks.map((check, i) => (
+                          <div
+                            key={i}
+                            className={`flex items-center gap-1.5 text-xs ${
+                              check.passed ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-400'
+                            }`}
+                          >
+                            {check.passed ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                            {check.label}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {error && (

@@ -13,11 +13,22 @@ function ShareHandler() {
   const { user, loading } = useAuth();
   const [open, setOpen] = useState(false);
 
+  // Extract shared data from URL params
   const sharedTitle = params.get('title') || '';
   const sharedText = params.get('text') || '';
-  const sharedUrl = params.get('url') || (sharedText?.startsWith('http') ? sharedText : '');
-  const noteText = sharedText && !sharedText.startsWith('http') ? sharedText : '';
-  const type = sharedUrl ? 'link' : 'note';
+  const sharedUrlParam = params.get('url') || '';
+
+  // Detect URL: either from url param or extracted from text
+  const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+  const urlFromText = sharedText.match(urlRegex)?.[0] || '';
+  const sharedUrl = sharedUrlParam || urlFromText || '';
+
+  // Text content (excluding URL if it was extracted)
+  const noteText = sharedUrl && sharedText.includes(sharedUrl)
+    ? sharedText.replace(sharedUrl, '').trim()
+    : sharedText;
+
+  const type = sharedUrl ? 'link' : noteText ? 'note' : 'link';
 
   useEffect(() => {
     if (loading) return;

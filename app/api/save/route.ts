@@ -2,7 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 // Single user mode - items are saved for this user
-const USER_ID = '1eac61f7-5b90-434d-8b6e-983a41c73a9b';
+// This matches the actual user in the database
+const USER_ID = 'd841ec80-1c05-4844-ae9f-489db53bf675';
 
 const VALID_TYPES = ['link', 'text', 'file'];
 
@@ -122,7 +123,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to save item' }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, data }, { status: 200 });
+  return NextResponse.json({ success: true, data }, { status: 201 });
 }
 
 export async function GET() {

@@ -28,12 +28,10 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/icon.svg', type: 'image/svg+xml' },
-      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+      { url: '/Icon-iOS-Default-1024@1x.png', sizes: '1024x1024', type: 'image/png' },
     ],
     apple: [
-      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+      { url: '/Icon-iOS-Default-1024@1x.png', sizes: '1024x1024', type: 'image/png' },
     ],
   },
 };
@@ -42,8 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="apple-touch-icon" href="/icon.svg" />
-        <link rel="mask-icon" href="/icon.svg" color="#1c1917" />
+        <link rel="apple-touch-icon" href="/Icon-iOS-Default-1024@1x.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>

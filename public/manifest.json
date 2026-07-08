@@ -11,10 +11,10 @@
   "scope": "/",
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
+      "src": "/Icon-iOS-Default-1024@1x.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
@@ -23,7 +23,7 @@
       "short_name": "Add",
       "description": "Quick add a new link or note",
       "url": "/share",
-      "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+      "icons": [{ "src": "/Icon-iOS-Default-1024@1x.png", "sizes": "1024x1024", "type": "image/png" }]
     }
   ],
   "share_target": {

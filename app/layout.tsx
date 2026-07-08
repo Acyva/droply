@@ -28,10 +28,10 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/Icon-iOS-Default-1024@1x.png', sizes: '1024x1024', type: 'image/png' },
+      { url: '/Untitled-iOS-Default-1024@1x.png', sizes: '1024x1024', type: 'image/png' },
     ],
     apple: [
-      { url: '/Icon-iOS-Default-1024@1x.png', sizes: '1024x1024', type: 'image/png' },
+      { url: '/Untitled-iOS-Default-1024@1x.png', sizes: '1024x1024', type: 'image/png' },
     ],
   },
 };
@@ -40,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="apple-touch-icon" href="/Icon-iOS-Default-1024@1x.png" />
+        <link rel="apple-touch-icon" href="/Untitled-iOS-Default-1024@1x.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>

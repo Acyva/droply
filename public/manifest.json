@@ -11,7 +11,7 @@
   "scope": "/",
   "icons": [
     {
-      "src": "/Icon-iOS-Default-1024@1x.png",
+      "src": "/Untitled-iOS-Default-1024@1x.png",
       "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any maskable"
@@ -23,7 +23,7 @@
       "short_name": "Add",
       "description": "Quick add a new link or note",
       "url": "/share",
-      "icons": [{ "src": "/Icon-iOS-Default-1024@1x.png", "sizes": "1024x1024", "type": "image/png" }]
+      "icons": [{ "src": "/Untitled-iOS-Default-1024@1x.png", "sizes": "1024x1024", "type": "image/png" }]
     }
   ],
   "share_target": {

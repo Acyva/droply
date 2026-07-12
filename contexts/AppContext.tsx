@@ -152,20 +152,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     Promise.all([refreshFolders(), refreshItems(), refreshTags(), refreshSmartFolders()]).finally(() =>
       setLoading(false)
     );
-
-    // Real-time subscription for items table
-    const channel = supabase
-      .channel('items-changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'items', filter: `user_id=eq.${user.id}` },
-        () => refreshItems()
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [user, refreshFolders, refreshItems, refreshTags, refreshSmartFolders]);
 
   const folderTree = buildFolderTree(folders);

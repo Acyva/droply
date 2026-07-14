@@ -14,7 +14,10 @@ export interface SmartFolder {
   icon: string;
   color: string;
   sort_order: number;
-  conditions: any[];
+  conditions: Array<{
+    field: 'type' | 'tag' | 'is_favorite';
+    value: string | boolean;
+  }>;
   created_at: string;
   updated_at: string;
 }
@@ -32,6 +35,7 @@ interface AppContextType {
   searchQuery: string;
   filterType: string | null;
   loading: boolean;
+  error: string | null;
   setSelectedFolderId: (id: string | null) => void;
   setSelectedItemId: (id: string | null) => void;
   setViewMode: (mode: 'grid' | 'list') => void;
@@ -88,55 +92,108 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refreshFolders = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('folders')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('sort_order');
-    if (data) setFolders(data);
+    try {
+      const { data, error: err } = await supabase
+        .from('folders')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('sort_order');
+      
+      if (err) {
+        console.error('Error fetching folders:', err);
+        setError('Failed to load folders');
+        return;
+      }
+      
+      setFolders(data ?? []);
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in refreshFolders:', err);
+      setError('Unexpected error loading folders');
+    }
   }, [user]);
 
   const refreshItems = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('items')
-      .select('*, item_tags(tag_id, tags(*))')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-    if (data) {
-      const mapped = data.map((item: any) => ({
-        ...item,
-        tags: (item.item_tags || []).map((it: any) => it.tags).filter(Boolean),
-        latitude: item.latitude ?? null,
-        longitude: item.longitude ?? null,
-        location_name: item.location_name ?? null,
-        location_address: item.location_address ?? null,
-      }));
-      setItems(mapped);
+    try {
+      const { data, error: err } = await supabase
+        .from('items')
+        .select('*, item_tags(tag_id, tags(*))')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      
+      if (err) {
+        console.error('Error fetching items:', err);
+        setError('Failed to load items');
+        return;
+      }
+      
+      if (data) {
+        const mapped = data.map((item: any) => ({
+          ...item,
+          tags: (item.item_tags || []).map((it: any) => it.tags).filter(Boolean),
+          latitude: item.latitude ?? null,
+          longitude: item.longitude ?? null,
+          location_name: item.location_name ?? null,
+          location_address: item.location_address ?? null,
+        }));
+        setItems(mapped);
+      }
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in refreshItems:', err);
+      setError('Unexpected error loading items');
     }
   }, [user]);
 
   const refreshTags = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('tags')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('name');
-    if (data) setTags(data);
+    try {
+      const { data, error: err } = await supabase
+        .from('tags')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('name');
+      
+      if (err) {
+        console.error('Error fetching tags:', err);
+        setError('Failed to load tags');
+        return;
+      }
+      
+      setTags(data ?? []);
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in refreshTags:', err);
+      setError('Unexpected error loading tags');
+    }
   }, [user]);
 
   const refreshSmartFolders = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('smart_folders')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('sort_order');
-    if (data) setSmartFolders(data);
+    try {
+      const { data, error: err } = await supabase
+        .from('smart_folders')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('sort_order');
+      
+      if (err) {
+        console.error('Error fetching smart folders:', err);
+        setError('Failed to load smart folders');
+        return;
+      }
+      
+      setSmartFolders(data ?? []);
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in refreshSmartFolders:', err);
+      setError('Unexpected error loading smart folders');
+    }
   }, [user]);
 
   useEffect(() => {
@@ -148,10 +205,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
+    
     setLoading(true);
-    Promise.all([refreshFolders(), refreshItems(), refreshTags(), refreshSmartFolders()]).finally(() =>
-      setLoading(false)
-    );
+    setError(null);
+    
+    Promise.all([refreshFolders(), refreshItems(), refreshTags(), refreshSmartFolders()])
+      .catch(err => {
+        console.error('Error during initial data load:', err);
+        setError('Failed to load data');
+      })
+      .finally(() => setLoading(false));
   }, [user, refreshFolders, refreshItems, refreshTags, refreshSmartFolders]);
 
   const folderTree = buildFolderTree(folders);
@@ -168,116 +231,299 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const createFolder = async (name: string, parentId?: string | null): Promise<Folder | null> => {
     if (!user) return null;
-    const { data, error } = await supabase
-      .from('folders')
-      .insert({ user_id: user.id, name, parent_folder_id: parentId ?? null })
-      .select()
-      .single();
-    if (error || !data) return null;
-    await refreshFolders();
-    return data;
+    try {
+      const { data, error: err } = await supabase
+        .from('folders')
+        .insert({ user_id: user.id, name, parent_folder_id: parentId ?? null })
+        .select()
+        .single();
+      
+      if (err || !data) {
+        console.error('Error creating folder:', err);
+        setError('Failed to create folder');
+        return null;
+      }
+      
+      await refreshFolders();
+      setError(null);
+      return data;
+    } catch (err) {
+      console.error('Unexpected error in createFolder:', err);
+      setError('Unexpected error creating folder');
+      return null;
+    }
   };
 
   const deleteFolder = async (id: string) => {
-    await supabase.from('folders').delete().eq('id', id);
-    await refreshFolders();
-    await refreshItems();
+    try {
+      const { error: err } = await supabase.from('folders').delete().eq('id', id);
+      if (err) {
+        console.error('Error deleting folder:', err);
+        setError('Failed to delete folder');
+        return;
+      }
+      await refreshFolders();
+      await refreshItems();
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in deleteFolder:', err);
+      setError('Unexpected error deleting folder');
+    }
   };
 
   const updateFolder = async (id: string, updates: Partial<Folder>) => {
-    await supabase.from('folders').update(updates).eq('id', id);
-    await refreshFolders();
+    try {
+      const { error: err } = await supabase.from('folders').update(updates).eq('id', id);
+      if (err) {
+        console.error('Error updating folder:', err);
+        setError('Failed to update folder');
+        return;
+      }
+      await refreshFolders();
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in updateFolder:', err);
+      setError('Unexpected error updating folder');
+    }
   };
 
   const createSmartFolder = async (data: Partial<SmartFolder>): Promise<SmartFolder | null> => {
     if (!user) return null;
-    const { data: created, error } = await supabase
-      .from('smart_folders')
-      .insert({ ...data, user_id: user.id })
-      .select()
-      .single();
-    if (error || !created) return null;
-    await refreshSmartFolders();
-    return created;
+    try {
+      const { data: created, error: err } = await supabase
+        .from('smart_folders')
+        .insert({ ...data, user_id: user.id })
+        .select()
+        .single();
+      
+      if (err || !created) {
+        console.error('Error creating smart folder:', err);
+        setError('Failed to create smart folder');
+        return null;
+      }
+      
+      await refreshSmartFolders();
+      setError(null);
+      return created;
+    } catch (err) {
+      console.error('Unexpected error in createSmartFolder:', err);
+      setError('Unexpected error creating smart folder');
+      return null;
+    }
   };
 
   const updateSmartFolder = async (id: string, updates: Partial<SmartFolder>) => {
-    await supabase.from('smart_folders').update(updates).eq('id', id);
-    await refreshSmartFolders();
+    try {
+      const { error: err } = await supabase.from('smart_folders').update(updates).eq('id', id);
+      if (err) {
+        console.error('Error updating smart folder:', err);
+        setError('Failed to update smart folder');
+        return;
+      }
+      await refreshSmartFolders();
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in updateSmartFolder:', err);
+      setError('Unexpected error updating smart folder');
+    }
   };
 
   const deleteSmartFolder = async (id: string) => {
-    await supabase.from('smart_folders').delete().eq('id', id);
-    await refreshSmartFolders();
+    try {
+      const { error: err } = await supabase.from('smart_folders').delete().eq('id', id);
+      if (err) {
+        console.error('Error deleting smart folder:', err);
+        setError('Failed to delete smart folder');
+        return;
+      }
+      await refreshSmartFolders();
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in deleteSmartFolder:', err);
+      setError('Unexpected error deleting smart folder');
+    }
   };
 
   const createItem = async (data: Partial<Item>): Promise<ItemWithTags | null> => {
     if (!user) return null;
-    const { data: created, error } = await supabase
-      .from('items')
-      .insert({ ...data, user_id: user.id })
-      .select()
-      .single();
-    if (error || !created) return null;
-    await refreshItems();
-    return { ...created, tags: [] };
+    try {
+      const { data: created, error: err } = await supabase
+        .from('items')
+        .insert({ ...data, user_id: user.id })
+        .select()
+        .single();
+      
+      if (err || !created) {
+        console.error('Error creating item:', err);
+        setError('Failed to create item');
+        return null;
+      }
+      
+      await refreshItems();
+      setError(null);
+      return { ...created, tags: [] };
+    } catch (err) {
+      console.error('Unexpected error in createItem:', err);
+      setError('Unexpected error creating item');
+      return null;
+    }
   };
 
   const updateItem = async (id: string, updates: Partial<Item>) => {
-    await supabase.from('items').update(updates).eq('id', id);
-    await refreshItems();
+    try {
+      const { error: err } = await supabase.from('items').update(updates).eq('id', id);
+      if (err) {
+        console.error('Error updating item:', err);
+        setError('Failed to update item');
+        return;
+      }
+      await refreshItems();
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in updateItem:', err);
+      setError('Unexpected error updating item');
+    }
   };
 
   const deleteItem = async (id: string) => {
-    await supabase.from('items').delete().eq('id', id);
-    await refreshItems();
-    if (selectedItemId === id) setSelectedItemId(null);
+    try {
+      const { error: err } = await supabase.from('items').delete().eq('id', id);
+      if (err) {
+        console.error('Error deleting item:', err);
+        setError('Failed to delete item');
+        return;
+      }
+      await refreshItems();
+      if (selectedItemId === id) setSelectedItemId(null);
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in deleteItem:', err);
+      setError('Unexpected error deleting item');
+    }
   };
 
   const toggleFavorite = async (id: string, current: boolean) => {
-    await supabase.from('items').update({ is_favorite: !current }).eq('id', id);
-    await refreshItems();
+    try {
+      const { error: err } = await supabase.from('items').update({ is_favorite: !current }).eq('id', id);
+      if (err) {
+        console.error('Error toggling favorite:', err);
+        setError('Failed to toggle favorite');
+        return;
+      }
+      await refreshItems();
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in toggleFavorite:', err);
+      setError('Unexpected error toggling favorite');
+    }
   };
 
   const toggleArchive = async (id: string, current: boolean) => {
-    await supabase.from('items').update({ is_archived: !current }).eq('id', id);
-    await refreshItems();
+    try {
+      const { error: err } = await supabase.from('items').update({ is_archived: !current }).eq('id', id);
+      if (err) {
+        console.error('Error toggling archive:', err);
+        setError('Failed to toggle archive');
+        return;
+      }
+      await refreshItems();
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in toggleArchive:', err);
+      setError('Unexpected error toggling archive');
+    }
   };
 
   const setItemTags = async (itemId: string, tagIds: string[]) => {
-    await supabase.from('item_tags').delete().eq('item_id', itemId);
-    if (tagIds.length > 0) {
-      await supabase.from('item_tags').insert(tagIds.map(tag_id => ({ item_id: itemId, tag_id })));
+    try {
+      const { error: err1 } = await supabase.from('item_tags').delete().eq('item_id', itemId);
+      if (err1) {
+        console.error('Error deleting item tags:', err1);
+        setError('Failed to update tags');
+        return;
+      }
+      
+      if (tagIds.length > 0) {
+        const { error: err2 } = await supabase.from('item_tags').insert(
+          tagIds.map(tag_id => ({ item_id: itemId, tag_id }))
+        );
+        if (err2) {
+          console.error('Error inserting item tags:', err2);
+          setError('Failed to update tags');
+          return;
+        }
+      }
+      
+      await refreshItems();
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in setItemTags:', err);
+      setError('Unexpected error updating tags');
     }
-    await refreshItems();
   };
 
   const createTag = async (name: string, color = '#6B7280'): Promise<Tag | null> => {
     if (!user) return null;
-    const existing = tags.find(t => t.name.toLowerCase() === name.toLowerCase());
-    if (existing) return existing;
-    const { data, error } = await supabase
-      .from('tags')
-      .insert({ user_id: user.id, name, color })
-      .select()
-      .single();
-    if (error || !data) return null;
-    await refreshTags();
-    return data;
+    try {
+      const existing = tags.find(t => t.name.toLowerCase() === name.toLowerCase());
+      if (existing) return existing;
+      
+      const { data, error: err } = await supabase
+        .from('tags')
+        .insert({ user_id: user.id, name, color })
+        .select()
+        .single();
+      
+      if (err || !data) {
+        console.error('Error creating tag:', err);
+        setError('Failed to create tag');
+        return null;
+      }
+      
+      await refreshTags();
+      setError(null);
+      return data;
+    } catch (err) {
+      console.error('Unexpected error in createTag:', err);
+      setError('Unexpected error creating tag');
+      return null;
+    }
   };
 
   const updateTag = async (id: string, updates: Partial<Tag>) => {
-    await supabase.from('tags').update(updates).eq('id', id);
-    await refreshTags();
+    try {
+      const { error: err } = await supabase.from('tags').update(updates).eq('id', id);
+      if (err) {
+        console.error('Error updating tag:', err);
+        setError('Failed to update tag');
+        return;
+      }
+      await refreshTags();
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in updateTag:', err);
+      setError('Unexpected error updating tag');
+    }
   };
 
   const deleteTag = async (id: string) => {
-    await supabase.from('tags').delete().eq('id', id);
-    await refreshTags();
+    try {
+      const { error: err } = await supabase.from('tags').delete().eq('id', id);
+      if (err) {
+        console.error('Error deleting tag:', err);
+        setError('Failed to delete tag');
+        return;
+      }
+      await refreshTags();
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error in deleteTag:', err);
+      setError('Unexpected error deleting tag');
+    }
   };
 
   const getFilteredItems = (): ItemWithTags[] => {
-    let filtered = items;
+    let filtered = [...items];
 
     if (selectedFolderId === 'favorites') {
       filtered = filtered.filter(i => i.is_favorite && !i.is_archived);
@@ -289,19 +535,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       filtered = filtered.filter(i => !i.is_archived && new Date(i.created_at) > weekAgo);
     } else if (selectedFolderId === 'all' || selectedFolderId === null) {
       filtered = filtered.filter(i => !i.is_archived);
-    } else if (selectedFolderId && selectedFolderId.startsWith('smart_')) {
+    } else if (selectedFolderId?.startsWith('smart_')) {
       // Smart folder filtering
       const smartId = selectedFolderId.substring(6);
       const smartFolder = smartFolders.find(sf => sf.id === smartId);
-      if (smartFolder && smartFolder.conditions && smartFolder.conditions.length > 0) {
+      if (smartFolder?.conditions && smartFolder.conditions.length > 0) {
         filtered = filtered.filter(item => {
-          return smartFolder.conditions.every((cond: any) => {
+          return smartFolder.conditions.every((cond) => {
             if (cond.field === 'type') {
               return item.type === cond.value;
             } else if (cond.field === 'tag') {
               return item.tags.some(t => t.id === cond.value);
             } else if (cond.field === 'is_favorite') {
-              return item.is_favorite;
+              return item.is_favorite === cond.value;
             }
             return true;
           });
@@ -318,14 +564,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        i =>
-          i.title.toLowerCase().includes(q) ||
-          i.description.toLowerCase().includes(q) ||
-          i.url.toLowerCase().includes(q) ||
-          i.personal_notes.toLowerCase().includes(q) ||
+      filtered = filtered.filter(i => {
+        const title = i.title?.toLowerCase() ?? '';
+        const description = i.description?.toLowerCase() ?? '';
+        const url = i.url?.toLowerCase() ?? '';
+        const notes = i.personal_notes?.toLowerCase() ?? '';
+        
+        return (
+          title.includes(q) ||
+          description.includes(q) ||
+          url.includes(q) ||
+          notes.includes(q) ||
           i.tags.some(t => t.name.toLowerCase().includes(q))
-      );
+        );
+      });
     }
 
     return filtered;
@@ -346,6 +598,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         searchQuery,
         filterType,
         loading,
+        error,
         setSelectedFolderId,
         setSelectedItemId,
         setViewMode,
